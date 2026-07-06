@@ -1,0 +1,16 @@
+{
+  "name": "gpu-forge",
+  "version": "1.0.0",
+  "description": "Machine-payable GPU inference API. AI agents pay per call in USDC on Polygon (x402-style).",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "@fastify/rate-limit": "^11.1.0",
+    "dotenv": "^16.4.5",
+    "ethers": "^6.13.0",
+    "fastify": "^5.0.0"
+  }
+}
