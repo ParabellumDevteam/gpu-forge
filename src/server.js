@@ -296,7 +296,7 @@ app.route({ method: ["GET", "POST"], url: "/v1/jobs/:service", handler: async (r
       reply.header("payment-required", Buffer.from(JSON.stringify(pr)).toString("base64"));
       return reply.code(402).send({ ...pr, error: "payment_invalid", detail: e.message });
     }
-    const settle = await settlePayment(parsed, usdcToUnits(svc.priceUsd));
+    const settle = await settlePayment(parsed, usdcToUnits(svc.priceUsd), paymentRequirements(name, svc));
     if (!settle.ok) {
       const pr = paymentRequirements(name, svc);
       reply.header("payment-required", Buffer.from(JSON.stringify(pr)).toString("base64"));
