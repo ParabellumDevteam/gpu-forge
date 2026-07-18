@@ -267,4 +267,55 @@ export const CATALOG = {
       };
     },
   },
+  "image.upscale": {
+    priceUsd: "0.02",
+    gpu: true,
+    description: "4x upscale via Real-ESRGAN on local ComfyUI. Body: { image_base64 } (PNG/JPEG, max 4MB decoded). Returns base64 PNG at 4x resolution.",
+    handler: async (body) => {
+      if (!body.image_base64) throw new Error("image_base64 required");
+      const src = Buffer.from(String(body.image_base64), "base64");
+      if (src.length < 100) throw new Error("image_base64 is not a valid image");
+      if (src.length > 4 * 1024 * 1024) throw new Error("image too large (max 4MB decoded)");
+      const boundary = "----forge" + Date.now();
+      const head = Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="image"; filename="up-${Date.now()}.png"\r\nContent-Type: application/octet-stream\r\n\r\n`);
+      const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
+      const up = await fetch(`${COMFY_URL}/upload/image`, {
+        method: "POST",
+        headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+        body: Buffer.concat([head, src, tail]),
+      });
+      if (!up.ok) throw new Error(`ComfyUI upload error ${up.status}`);
+      const { name: uploaded } = await up.json();
+      const graph = {
+        1: { class_type: "LoadImage", inputs: { image: uploaded } },
+        2: { class_type: "UpscaleModelLoader", inputs: { model_name: "RealESRGAN_x4plus.pth" } },
+        3: { class_type: "ImageUpscaleWithModel", inputs: { upscale_model: ["2", 0], image: ["1", 0] } },
+        4: { class_type: "SaveImage", inputs: { images: ["3", 0], filename_prefix: "forge-upscale" } },
+      };
+      const q = await fetch(`${COMFY_URL}/prompt`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ prompt: graph }),
+      });
+      if (!q.ok) throw new Error(`ComfyUI queue error ${q.status}`);
+      const { prompt_id } = await q.json();
+      let outputs;
+      const deadline = Date.now() + 120_000;
+      while (Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 1500));
+        const h = await (await fetch(`${COMFY_URL}/history/${prompt_id}`)).json();
+        const e = h[prompt_id];
+        if (e?.status?.completed) { outputs = e.outputs; break; }
+        if (e?.status?.status_str === "error") throw new Error("ComfyUI execution error (is the input a valid image?)");
+      }
+      if (!outputs) throw new Error("ComfyUI timeout after 120s");
+      const img = Object.values(outputs).flatMap((o) => o.images || [])[0];
+      if (!img) throw new Error("ComfyUI produced no image");
+      const view = await fetch(
+        `${COMFY_URL}/view?filename=${encodeURIComponent(img.filename)}&subfolder=${encodeURIComponent(img.subfolder || "")}&type=${img.type}`
+      );
+      if (!view.ok) throw new Error("could not fetch upscaled image");
+      return { image_base64: Buffer.from(await view.arrayBuffer()).toString("base64"), scale: 4, model: "RealESRGAN_x4plus", format: "png" };
+    },
+  },
 };
