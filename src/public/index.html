@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GPU Forge — compute a machine can buy</title>
+<meta name="description" content="Machine-payable GPU compute. POST a job, get an HTTP 402 quote, pay USDC on Base or Polygon, collect the result. No signup, no API key.">
+<meta property="og:title" content="GPU Forge — compute a machine can buy">
+<meta property="og:description" content="Pay-per-call GPU API for AI agents. USDC on Base & Polygon via x402. A wallet is the whole account.">
+<meta property="og:image" content="https://forge.parabellum.tech/assets/og.jpg">
+<meta property="og:url" content="https://forge.parabellum.tech/">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230B0B0D'/%3E%3Cpath d='M8 22h16v3H8zM12 19h8L16 8z' fill='%23FF4D00'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Michroma&family=IBM+Plex+Sans:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0B0B0D; --panel:#141317; --line:#262229;
+  --text:#F2EFEA; --dim:#8A8578;
+  --ember:#FF4D00; --glow:#FFA55C; --usdc:#2775CA;
+  --mono:"IBM Plex Mono",ui-monospace,monospace;
+  --sans:"IBM Plex Sans",system-ui,sans-serif;
+  --disp:"Michroma",var(--sans);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{background:var(--ink);color:var(--text);font:16px/1.6 var(--sans);-webkit-font-smoothing:antialiased}
+a{color:inherit}
+.wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+.seam{height:1px;background:linear-gradient(90deg,var(--ember),rgba(255,77,0,.25) 40%,transparent 85%);border:0}
+
+/* top bar */
+header{display:flex;align-items:center;justify-content:space-between;padding:22px 0}
+.mark{font-family:var(--disp);font-size:15px;letter-spacing:.14em;text-decoration:none}
+.mark b{color:var(--ember);font-weight:400}
+nav{display:flex;gap:22px}
+nav a{font-family:var(--mono);font-size:13px;color:var(--dim);text-decoration:none}
+nav a:hover,nav a:focus-visible{color:var(--text)}
+
+/* hero */
+.hero{display:grid;grid-template-columns:1fr 1fr;gap:48px;align-items:center;padding:64px 0 56px}
+.eyebrow{font-family:var(--disp);font-size:11px;letter-spacing:.22em;color:var(--ember);margin-bottom:20px}
+h1{font-family:var(--sans);font-weight:600;font-size:clamp(34px,4.6vw,52px);line-height:1.08;letter-spacing:-.02em;margin-bottom:18px}
+.sub{color:var(--dim);max-width:44ch;margin-bottom:28px}
+.sub b{color:var(--text);font-weight:600}
+.cta{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:26px}
+.btn{font-family:var(--mono);font-size:14px;padding:12px 20px;text-decoration:none;border:1px solid var(--line);cursor:pointer;background:none;color:var(--text)}
+.btn.primary{background:var(--ember);border-color:var(--ember);color:#0B0B0D;font-weight:500}
+.btn.primary:hover{background:var(--glow);border-color:var(--glow)}
+.btn:not(.primary):hover{border-color:var(--dim)}
+.btn:focus-visible{outline:2px solid var(--glow);outline-offset:2px}
+.chips{display:flex;gap:10px;flex-wrap:wrap}
+.chip{font-family:var(--mono);font-size:12px;color:var(--dim);border:1px solid var(--line);padding:5px 10px;display:inline-flex;gap:8px;align-items:center}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--dim)}
+.dot.hot{background:var(--ember);box-shadow:0 0 8px var(--ember);animation:pulse 2s infinite}
+.dot.ok{background:#4CAF6E}
+@keyframes pulse{50%{opacity:.5}}
+@media (prefers-reduced-motion:reduce){.dot.hot{animation:none}}
+
+/* terminal — the signature */
+.term{background:var(--panel);border:1px solid var(--line);border-top:2px solid var(--ember);font-family:var(--mono);font-size:12.5px;line-height:1.7}
+.term-bar{display:flex;justify-content:space-between;padding:10px 16px;border-bottom:1px solid var(--line);color:var(--dim);font-size:11.5px}
+.term-bar .code402{color:var(--ember)}
+.term pre{padding:16px;overflow-x:auto;white-space:pre;color:var(--dim)}
+.term .k{color:var(--text)}.term .n{color:var(--glow)}.term .s{color:var(--usdc)}
+
+/* hero image band — capped near native render size so it stays crisp */
+.band{position:relative;margin:8px auto 0;max-width:1152px;padding:0 24px}
+.band img{display:block;width:100%;height:auto}
+.credit{position:absolute;right:36px;bottom:12px;font-family:var(--mono);font-size:11.5px;background:rgba(11,11,13,.82);border:1px solid var(--line);padding:6px 10px;color:var(--dim)}
+.credit b{color:var(--glow);font-weight:500}
+
+/* sections */
+section{padding:72px 0 0}
+h2{font-family:var(--disp);font-size:15px;letter-spacing:.16em;margin-bottom:8px}
+.lede{color:var(--dim);margin-bottom:32px;max-width:60ch}
+
+/* price table */
+table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:13.5px}
+th{text-align:left;color:var(--dim);font-weight:400;font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;padding:0 14px 10px;border-bottom:1px solid var(--line)}
+td{padding:13px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+td.svc{color:var(--text);white-space:nowrap}
+td.desc{color:var(--dim);font-family:var(--sans);font-size:14px;max-width:52ch}
+td.mode{white-space:nowrap;color:var(--dim)}
+td.price{text-align:right;color:var(--glow);white-space:nowrap}
+tr:hover td{background:rgba(255,77,0,.035)}
+.async-tag{color:var(--usdc)}
+.tbl-wrap{overflow-x:auto}
+
+/* steps — a real sequence: quote, pay, collect */
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.step{background:var(--panel);border:1px solid var(--line);padding:22px}
+.step .no{font-family:var(--disp);font-size:12px;color:var(--ember);letter-spacing:.14em;margin-bottom:12px}
+.step h3{font-family:var(--sans);font-size:17px;font-weight:600;margin-bottom:8px}
+.step p{color:var(--dim);font-size:14px;margin-bottom:12px}
+.step code{display:block;font-family:var(--mono);font-size:11.5px;color:var(--glow);background:var(--ink);border:1px solid var(--line);padding:10px;overflow-x:auto;white-space:pre}
+.step .rail{font-family:var(--mono);font-size:11.5px;color:var(--usdc)}
+
+/* gallery */
+.gallery{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.shot{position:relative;border:1px solid var(--line)}
+.shot img{display:block;width:100%;height:auto}
+.shot .credit{right:8px;bottom:8px}
+.budget{font-family:var(--mono);font-size:12.5px;color:var(--dim);margin-top:18px}
+.budget b{color:var(--glow);font-weight:500}
+
+/* machines */
+.disc{display:flex;gap:14px;flex-wrap:wrap}
+.disc a{font-family:var(--mono);font-size:13px;color:var(--dim);text-decoration:none;border:1px solid var(--line);padding:10px 16px}
+.disc a:hover,.disc a:focus-visible{color:var(--text);border-color:var(--dim)}
+
+footer{margin-top:80px;padding:28px 0 40px;color:var(--dim);font-size:13px}
+footer .row{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
+footer a{color:var(--dim)}
+footer a:hover{color:var(--text)}
+.oath{font-family:var(--mono);font-size:12.5px;max-width:60ch;margin-bottom:18px}
+.oath b{color:var(--ember);font-weight:500}
+
+@media(max-width:820px){
+  .hero{grid-template-columns:1fr;gap:36px;padding-top:40px}
+  .steps,.gallery{grid-template-columns:1fr}
+  nav a.hide-m{display:none}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a class="mark" href="/">GPU<b>FORGE</b></a>
+    <nav>
+      <a href="#prices">price list</a>
+      <a class="hide-m" href="#pay">how to pay</a>
+      <a class="hide-m" href="/openapi.json">openapi</a>
+      <a href="https://github.com/ParabellumDevteam/gpu-forge">github</a>
+    </nav>
+  </header>
+  <hr class="seam">
+
+  <div class="hero">
+    <div>
+      <p class="eyebrow">PARABELLUM // MACHINE-PAYABLE COMPUTE</p>
+      <h1>Compute a machine can&nbsp;buy.</h1>
+      <p class="sub">POST a job. Get an HTTP 402 quote. Pay the exact amount in USDC on Base or Polygon. Collect the result. <b>No signup, no API key</b> — a wallet is the whole account.</p>
+      <div class="cta">
+        <button class="btn primary" id="copy-probe" type="button">Probe the GPU — $0.01</button>
+        <a class="btn" href="#prices">Read the price list</a>
+      </div>
+      <div class="chips">
+        <span class="chip"><span class="dot ok" id="api-dot"></span><span id="api-label">API</span></span>
+        <span class="chip"><span class="dot" id="gpu-dot"></span><span id="gpu-label">GPU: checking…</span></span>
+        <span class="chip" style="color:var(--usdc);border-color:rgba(39,117,202,.4)">USDC · Base 8453 · Polygon 137</span>
+      </div>
+    </div>
+    <div class="term" aria-label="Live payment quote from this API">
+      <div class="term-bar"><span>POST /v1/jobs/llm.generate</span><span class="code402" id="term-status">HTTP 402 Payment Required</span></div>
+      <pre id="term-body">{
+  <span class="k">"x402Version"</span>: <span class="n">2</span>,
+  <span class="k">"accepts"</span>: [{
+    <span class="k">"scheme"</span>: <span class="s">"exact"</span>,
+    <span class="k">"network"</span>: <span class="s">"eip155:8453"</span>,
+    <span class="k">"asset"</span>: <span class="s">"USDC"</span>,
+    <span class="k">"maxAmountRequired"</span>: <span class="n">"50000"</span>,
+    <span class="k">"payTo"</span>: <span class="s">"0xAA0d…2DeB"</span>
+  }]
+}
+<span style="color:var(--dim)"># this quote is real — fetched from this API</span></pre>
+    </div>
+  </div>
+</div>
+
+<div class="band">
+  <img src="/assets/hero.webp" alt="Molten metal pouring onto a silicon chip" width="1152" height="768" loading="eager">
+  <span class="credit"><b>image.generate</b> · rendered by this API on its own GPU · $0.08</span>
+</div>
+
+<div class="wrap">
+  <section id="prices">
+    <h2>PRICE LIST</h2>
+    <p class="lede">Live from <a href="/v1/services" style="color:var(--glow)">/v1/services</a> — the same catalog your agent reads. Prices are per call, settled on-chain before the job runs.</p>
+    <div class="tbl-wrap">
+    <table id="price-table">
+      <thead><tr><th>service</th><th>what it does</th><th>mode</th><th style="text-align:right">usdc / call</th></tr></thead>
+      <tbody>
+        <tr><td class="svc">gpu.probe</td><td class="desc">Live nvidia-smi output — verify real capacity before buying bigger jobs</td><td class="mode">sync</td><td class="price">$0.01</td></tr>
+        <tr><td class="svc">llm.embed</td><td class="desc">Embedding vector for a text — RAG building block</td><td class="mode">sync</td><td class="price">$0.01</td></tr>
+        <tr><td class="svc">image.upscale</td><td class="desc">4× Real-ESRGAN upscale of your image</td><td class="mode">sync</td><td class="price">$0.02</td></tr>
+        <tr><td class="svc">llm.summarize</td><td class="desc">Summarize text on a locally hosted open model</td><td class="mode">sync</td><td class="price">$0.03</td></tr>
+        <tr><td class="svc">llm.extract</td><td class="desc">Structured JSON extraction from unstructured text</td><td class="mode">sync</td><td class="price">$0.03</td></tr>
+        <tr><td class="svc">llm.generate</td><td class="desc">Text generation on a local open model</td><td class="mode">sync</td><td class="price">$0.05</td></tr>
+        <tr><td class="svc">image.generate</td><td class="desc">Flux schnell text-to-image, up to 1024px PNG</td><td class="mode">sync</td><td class="price">$0.08</td></tr>
+        <tr><td class="svc">video.generate</td><td class="desc">Wan 2.1 text-to-video, 832×480 @ 16fps</td><td class="mode"><span class="async-tag">async</span></td><td class="price">$0.25</td></tr>
+      </tbody>
+    </table>
+    </div>
+  </section>
+
+  <section id="pay">
+    <h2>HOW A MACHINE BUYS</h2>
+    <p class="lede">Three HTTP requests, no account anywhere. Async jobs (video) return a job id immediately; poll <code style="font-family:var(--mono);font-size:13px;color:var(--glow)">/v1/results/{id}</code> for the artifact.</p>
+    <div class="steps">
+      <div class="step">
+        <p class="no">STEP 01</p>
+        <h3>Quote</h3>
+        <p>Call any job endpoint. The forge answers 402 with the exact amount and address.</p>
+        <code>curl -X POST https://forge.parabellum.tech\
+  /v1/jobs/llm.generate</code>
+      </div>
+      <div class="step">
+        <p class="no">STEP 02</p>
+        <h3>Pay</h3>
+        <p>Transfer the quoted USDC from any wallet — yours or your agent's.</p>
+        <code>→ 0.05 USDC to payTo address</code>
+        <p class="rail" style="margin-top:10px">Base (eip155:8453) · Polygon (eip155:137)<br>or sign an x402 authorization header</p>
+      </div>
+      <div class="step">
+        <p class="no">STEP 03</p>
+        <h3>Collect</h3>
+        <p>Retry the same request with the transaction hash. Each hash is single-use.</p>
+        <code>curl -X POST …/v1/jobs/llm.generate \
+  -H "X-Payment-Tx: 0x…" \
+  -d '{"prompt":"…"}'</code>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>MADE BY THE FORGE</h2>
+    <p class="lede">Every image on this page was rendered by the hardware behind this API, through the same paid endpoints listed above.</p>
+    <div class="gallery">
+      <div class="shot"><img src="/assets/die.webp" alt="Glowing GPU die held in blacksmith tongs" loading="lazy" width="768" height="768"><span class="credit"><b>image.generate</b> · $0.08</span></div>
+      <div class="shot"><img src="/assets/mint.webp" alt="Blank steel disc struck in an industrial press" loading="lazy" width="768" height="768"><span class="credit"><b>image.generate</b> · $0.08</span></div>
+      <div class="shot"><img src="/assets/wire.webp" alt="Molten metal flowing in circuit-like channels" loading="lazy" width="768" height="768"><span class="credit"><b>image.generate</b> · $0.08</span></div>
+    </div>
+    <p class="budget">Art budget for this entire page: <b>$0.40</b> — five generations, one discarded.</p>
+  </section>
+
+  <section>
+    <h2>FOR AGENTS</h2>
+    <p class="lede">Discovery surfaces, machine-readable. Point your agent here and walk away.</p>
+    <div class="disc">
+      <a href="/v1/services">/v1/services</a>
+      <a href="/openapi.json">/openapi.json</a>
+      <a href="/.well-known/x402">/.well-known/x402</a>
+      <a href="https://www.x402scan.com">listed on x402scan</a>
+      <a href="/forge/credits">credit packs</a>
+    </div>
+  </section>
+
+  <footer>
+    <hr class="seam" style="margin-bottom:26px">
+    <p class="oath"><b>Operating notes.</b> This forge runs autonomously: prices are proposed by a margin engine and every endpoint is approved by a human before it sells. Payments settle on-chain. No accounts, no custody, no stored keys.</p>
+    <div class="row">
+      <span>© 2026 Parabellum · VILANO B&D, S.L.</span>
+      <span><a href="https://github.com/ParabellumDevteam/gpu-forge">source</a> · <a href="https://parabellum.tech">parabellum.tech</a></span>
+    </div>
+  </footer>
+</div>
+
+<script>
+(async () => {
+  // Live GPU state via real API semantics: 402 = hot, 503 = cold (on-demand).
+  const gd = document.getElementById("gpu-dot"), gl = document.getElementById("gpu-label");
+  try {
+    const r = await fetch("/v1/jobs/gpu.probe", { method: "POST" });
+    if (r.status === 402) { gd.className = "dot hot"; gl.textContent = "GPU: HOT"; }
+    else if (r.status === 503) { gl.textContent = "GPU: COLD (on-demand)"; }
+    else { gl.textContent = "GPU: " + r.status; }
+  } catch { gl.textContent = "GPU: unreachable"; }
+
+  // Real quote into the terminal.
+  try {
+    const r = await fetch("/v1/jobs/llm.generate", { method: "POST" });
+    if (r.status !== 402) return;
+    const q = await r.json();
+    const a = (q.accepts || [])[0] || {};
+    const esc = (s) => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;");
+    const short = (s) => s && s.length > 14 ? s.slice(0, 6) + "…" + s.slice(-4) : s;
+    document.getElementById("term-body").innerHTML =
+`{
+  <span class="k">"x402Version"</span>: <span class="n">${esc(q.x402Version ?? 2)}</span>,
+  <span class="k">"accepts"</span>: [{
+    <span class="k">"scheme"</span>: <span class="s">"${esc(a.scheme || "exact")}"</span>,
+    <span class="k">"network"</span>: <span class="s">"${esc(a.network || "eip155:8453")}"</span>,
+    <span class="k">"maxAmountRequired"</span>: <span class="n">"${esc(a.maxAmountRequired || a.amount || "")}"</span>,
+    <span class="k">"payTo"</span>: <span class="s">"${esc(short(a.payTo || ""))}"</span>
+  }]
+}
+<span style="color:var(--dim)"># live — this API just quoted you for real</span>`;
+  } catch { /* baked-in quote stays */ }
+
+  // Live price table.
+  try {
+    const r = await fetch("/v1/services");
+    const { services } = await r.json();
+    const rows = Object.entries(services)
+      .map(([k, v]) => ({ svc: k, desc: (v.description || "").split(". ")[0].split(" Body:")[0], price: Number(v.priceUsd), async: /async/i.test(v.description || "") }))
+      .sort((x, y) => x.price - y.price);
+    document.querySelector("#price-table tbody").innerHTML = rows.map((s) =>
+      `<tr><td class="svc">${s.svc}</td><td class="desc">${s.desc}</td><td class="mode">${s.async ? '<span class="async-tag">async</span>' : "sync"}</td><td class="price">$${s.price.toFixed(2)}</td></tr>`
+    ).join("");
+  } catch { /* baked-in table stays */ }
+
+  // Copy the probe command.
+  const btn = document.getElementById("copy-probe");
+  btn.addEventListener("click", async () => {
+    await navigator.clipboard.writeText("curl -X POST https://forge.parabellum.tech/v1/jobs/gpu.probe");
+    const t = btn.textContent; btn.textContent = "curl copied — go probe";
+    setTimeout(() => (btn.textContent = t), 2200);
+  });
+})();
+</script>
+</body>
+</html>

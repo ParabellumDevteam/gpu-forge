@@ -18,6 +18,14 @@ import { verifyPayment, usdcToUnits, paymentInfo, NETWORKS } from "./payment.js"
 import { parsePaymentHeader, settlePayment, settlementEnabled, settlementResponseHeader } from "./x402-settle.js";
 import { CATALOG, gpuStatus } from "./services.js";
 import { startJob, getJob } from "./async-jobs.js";
+import { readFileSync } from "node:fs";
+
+// Landing page + generated art, committed alongside the code (src/public/).
+const PUBLIC_DIR = new URL("./public/", import.meta.url);
+const SITE_ASSETS = {
+  "hero.webp": "image/webp", "die.webp": "image/webp",
+  "mint.webp": "image/webp", "wire.webp": "image/webp", "og.jpg": "image/jpeg",
+};
 import { registerCreditRoutes } from "./credits.js";
 
 const PORT = Number(process.env.PORT || 4402);
@@ -36,12 +44,33 @@ await app.register(rateLimit, {
   timeWindow: "1 minute",
 });
 
-app.get("/", async () => ({
-  name: "GPU Forge",
-  description: "Machine-payable GPU compute. AI agents welcome. Pay per call in USDC on Base or Polygon, no signup.",
-  protocol: "x402-style: POST a job, receive 402 with a quote, pay, retry with X-Payment-Tx header.",
-  services: "/v1/services",
-}));
+// Browsers (Accept: text/html) get the landing page; agents and curl keep JSON.
+app.get("/", async (req, reply) => {
+  if ((req.headers.accept || "").includes("text/html")) {
+    try {
+      return reply.type("text/html; charset=utf-8").send(readFileSync(new URL("index.html", PUBLIC_DIR)));
+    } catch { /* fall through to JSON */ }
+  }
+  return {
+    name: "GPU Forge",
+    description: "Machine-payable GPU compute. AI agents welcome. Pay per call in USDC on Base or Polygon, no signup.",
+    protocol: "x402-style: POST a job, receive 402 with a quote, pay, retry with X-Payment-Tx header.",
+    services: "/v1/services",
+  };
+});
+
+app.get("/assets/:file", async (req, reply) => {
+  const type = SITE_ASSETS[req.params.file];
+  if (!type) return reply.code(404).send({ error: "not found" });
+  try {
+    return reply
+      .type(type)
+      .header("cache-control", "public, max-age=86400")
+      .send(readFileSync(new URL("assets/" + req.params.file, PUBLIC_DIR)));
+  } catch {
+    return reply.code(404).send({ error: "not found" });
+  }
+});
 
 const BASE_URL = process.env.PUBLIC_BASE_URL || "https://forge.parabellum.tech";
 
