@@ -16,7 +16,9 @@ import rateLimit from "@fastify/rate-limit";
 import { hasPayment, recordPayment, revenueSummary } from "./ledger.js";
 import { verifyPayment, usdcToUnits, paymentInfo, NETWORKS } from "./payment.js";
 import { parsePaymentHeader, settlePayment, settlementEnabled, settlementResponseHeader } from "./x402-settle.js";
-import { CATALOG } from "./services.js";
+import { CATALOG, gpuStatus } from "./services.js";
+import { startJob, getJob } from "./async-jobs.js";
+import { registerCreditRoutes } from "./credits.js";
 
 const PORT = Number(process.env.PORT || 4402);
 const HOST = process.env.HOST || "0.0.0.0";
@@ -283,6 +285,17 @@ app.route({ method: ["GET", "POST"], url: "/v1/jobs/:service", handler: async (r
   const svc = CATALOG[name];
   if (!svc) return reply.code(404).send({ error: "Unknown service", services: Object.keys(CATALOG) });
 
+  // GPU capacity is spun up on demand. Refuse BEFORE taking payment when it is
+  // offline so nobody is ever charged for a job that cannot run.
+  if (svc.gpu && !(await gpuStatus()).up) {
+    reply.header("retry-after", "300");
+    return reply.code(503).send({
+      error: "gpu_offline",
+      detail: "GPU capacity is provisioned on demand and is currently offline. Retry in ~5 minutes; your quote and pricing are unchanged.",
+      retry_after_seconds: 300,
+    });
+  }
+
   const txHash = String(req.headers["x-payment-tx"] || "").trim();
   const signedPayment = req.headers["payment-signature"] || req.headers["x-payment"];
 
@@ -309,7 +322,9 @@ app.route({ method: ["GET", "POST"], url: "/v1/jobs/:service", handler: async (r
     reply.header("payment-response", settlementResponseHeader(settle));
     reply.header("x-payment-response", settlementResponseHeader(settle));
     try {
-      const result = await svc.handler(req.body || {});
+      const result = svc.async
+        ? startJob(settle.txHash, name, svc, req.body || {})
+        : await svc.handler(req.body || {});
       return {
         service: name,
         paid: { txHash: settle.txHash, payer: settle.payer, amountUsdc: Number(settle.amountUnits) / 1e6 },
@@ -354,7 +369,9 @@ app.route({ method: ["GET", "POST"], url: "/v1/jobs/:service", handler: async (r
 
   // Run the GPU job
   try {
-    const result = await svc.handler(req.body || {});
+    const result = svc.async
+      ? startJob(txHash, name, svc, req.body || {})
+      : await svc.handler(req.body || {});
     return {
       service: name,
       paid: { txHash, payer: check.payer, amountUsdc: Number(check.amountUnits) / 1e6 },
@@ -370,6 +387,15 @@ app.route({ method: ["GET", "POST"], url: "/v1/jobs/:service", handler: async (r
     });
   }
 }});
+
+app.get("/v1/results/:jobId", async (req, reply) => {
+  const j = getJob(String(req.params.jobId));
+  if (!j) return reply.code(404).send({ error: "unknown job id" });
+  return j;
+});
+
+// Forge Bot credit packs (Telegram bot top-ups) share the same x402 paywall.
+registerCreditRoutes(app);
 
 for (const sig of ["SIGTERM", "SIGINT"]) {
   process.once(sig, () => {

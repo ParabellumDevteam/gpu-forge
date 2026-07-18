@@ -3,3 +3,5 @@ node_modules/
 *.log
 .env.pre-settle.*
 TODO.md
+.env.bak*
+src/*.pre-*
