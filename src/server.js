@@ -18,6 +18,7 @@ import { verifyPayment, usdcToUnits, paymentInfo, NETWORKS } from "./payment.js"
 import { parsePaymentHeader, settlePayment, settlementEnabled, settlementResponseHeader } from "./x402-settle.js";
 import { CATALOG, gpuStatus } from "./services.js";
 import { startJob, getJob } from "./async-jobs.js";
+import { EXTRA_SCHEMAS, EXTRA_EXAMPLES } from "./discovery.js";
 import { readFileSync } from "node:fs";
 
 // Landing page + generated art, committed alongside the code (src/public/).
@@ -118,6 +119,8 @@ const SERVICE_EXAMPLES = {
     output: { model: "llama3.1:8b", response: "Hello there, nice to meet you!", eval_count: 9 },
   },
 };
+Object.assign(SERVICE_SCHEMAS, EXTRA_SCHEMAS);
+Object.assign(SERVICE_EXAMPLES, EXTRA_EXAMPLES);
 
 // x402 v2 PaymentRequired body (spec: coinbase/x402 specs/x402-specification-v2.md).
 // Settlement here is by direct on-chain transfer + X-Payment-Tx, not a signed
@@ -207,8 +210,23 @@ app.get("/favicon.ico", async (req, reply) => {
 
 // Discovery manifest: every sellable resource with its payment requirements.
 app.get("/.well-known/x402", async () => ({
-  x402Version: 1,
-  resources: Object.entries(CATALOG).map(([name, svc]) => paymentRequirements(name, svc).accepts[0]),
+  x402Version: 2,
+  resources: Object.entries(CATALOG).map(([name, svc]) => {
+    const pr = paymentRequirements(name, svc);
+    return {
+      resource: `${BASE_URL}/v1/jobs/${name}`,
+      type: "http",
+      x402Version: 2,
+      accepts: pr.accepts,
+      metadata: {
+        name,
+        description: svc.description,
+        mode: svc.async ? "async (poll /v1/results/{job_id})" : "sync",
+        priceUsd: svc.priceUsd,
+      },
+      lastUpdated: new Date().toISOString(),
+    };
+  }),
 }));
 
 // OpenAPI discovery document (x402scan et al. read this at /openapi.json).
@@ -242,50 +260,34 @@ const openapiDoc = () => ({
     description:
       "Machine-payable GPU compute. Pay per call in USDC on Base or Polygon, no accounts, no API keys.",
     "x-guidance":
-      "Each POST endpoint returns HTTP 402 with an x402 quote when called without payment. Send the exact USDC amount on Base (chainId 8453) or Polygon (chainId 137) to the quoted payTo address, then retry the same request with header X-Payment-Tx: 0x<transaction hash>. Each transaction hash is single use. Use POST /v1/jobs/gpu.probe (0.01 USD) to verify live GPU capacity, and POST /v1/jobs/llm.generate (0.05 USD) for text generation with a JSON body containing a prompt field.",
+      "Each POST endpoint returns HTTP 402 with an x402 quote when called without payment. Send the exact USDC amount on Base (chainId 8453) or Polygon (chainId 137) to the quoted payTo address, then retry the same request with header X-Payment-Tx: 0x<transaction hash>. Each transaction hash is single use. Catalog: gpu.probe 0.01, llm.embed 0.01, image.upscale 0.02, llm.summarize 0.03, llm.extract 0.03, llm.generate 0.05, image.generate 0.08, video.generate 0.25 (async: the paid response returns a job_id; poll /v1/results/{job_id}).",
     contact: { email: "admin@parabellum.tech" },
   },
   servers: [{ url: BASE_URL }],
-  paths: {
-    "/v1/jobs/gpu.probe": {
-      post: {
-        operationId: "gpuProbe",
-        summary: "GPU probe: live nvidia-smi capacity check",
-        tags: ["GPU"],
-        "x-payment-info": {
-          price: { mode: "fixed", currency: "USD", amount: CATALOG["gpu.probe"].priceUsd },
-          protocols: [{ x402: {} }],
+  paths: Object.fromEntries(
+    Object.entries(CATALOG).map(([name, svc]) => [
+      `/v1/jobs/${name}`,
+      {
+        post: {
+          operationId: name.replace(/\.(\w)/g, (_, c) => c.toUpperCase()),
+          summary: `${name}: ${svc.description.split(" Body:")[0]}`,
+          tags: [name.split(".")[0].toUpperCase()],
+          "x-payment-info": {
+            price: { mode: "fixed", currency: "USD", amount: svc.priceUsd },
+            protocols: [{ x402: {} }],
+          },
+          requestBody: {
+            required: !!SERVICE_SCHEMAS[name]?.input?.required?.length,
+            content: { "application/json": { schema: SERVICE_SCHEMAS[name]?.input ?? { type: "object" } } },
+          },
+          responses: paidResponses({
+            ...paidReceipt,
+            properties: { ...paidReceipt.properties, result: SERVICE_SCHEMAS[name]?.output ?? { type: "object" } },
+          }),
         },
-        requestBody: {
-          required: false,
-          content: { "application/json": { schema: SERVICE_SCHEMAS["gpu.probe"].input } },
-        },
-        responses: paidResponses({
-          ...paidReceipt,
-          properties: { ...paidReceipt.properties, result: SERVICE_SCHEMAS["gpu.probe"].output },
-        }),
       },
-    },
-    "/v1/jobs/llm.generate": {
-      post: {
-        operationId: "llmGenerate",
-        summary: "LLM text generation on a locally hosted open model",
-        tags: ["LLM"],
-        "x-payment-info": {
-          price: { mode: "fixed", currency: "USD", amount: CATALOG["llm.generate"].priceUsd },
-          protocols: [{ x402: {} }],
-        },
-        requestBody: {
-          required: true,
-          content: { "application/json": { schema: SERVICE_SCHEMAS["llm.generate"].input } },
-        },
-        responses: paidResponses({
-          ...paidReceipt,
-          properties: { ...paidReceipt.properties, result: SERVICE_SCHEMAS["llm.generate"].output },
-        }),
-      },
-    },
-  },
+    ])
+  ),
 });
 app.get("/openapi.json", async () => openapiDoc());
 
